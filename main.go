@@ -53,6 +53,8 @@ const selectUID = `SELECT * FROM acfunlive
 	LIMIT ?;
 `
 
+const selectLiveID = `SELECT uid FROM acfunlive WHERE liveID = ?;`
+
 type live struct {
 	liveID      string // 直播ID
 	uid         int    // 主播uid
@@ -190,12 +192,16 @@ func handleQuery(ctx context.Context, stmt *sql.Stmt, uid int, count int) {
 }
 
 // 处理输入
-func handleInput(ctx context.Context, db *sql.DB) {
+func handleInput(ctx context.Context, db *sql.DB, updateStmt *sql.Stmt) {
 	const helpMsg = `请输入"listall 主播的uid"、"list20 主播的uid"、"getplayback liveID"或"quit"`
 
-	selectStmt, err := db.PrepareContext(ctx, selectUID)
+	selectUIDStmt, err := db.PrepareContext(ctx, selectUID)
 	checkErr(err)
-	defer selectStmt.Close()
+	defer selectUIDStmt.Close()
+
+	selectLiveIDStmt, err := db.PrepareContext(ctx, selectLiveID)
+	checkErr(err)
+	defer selectLiveIDStmt.Close()
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -214,6 +220,16 @@ func handleInput(ctx context.Context, db *sql.DB) {
 				if err != nil {
 					log.Println(err)
 				} else {
+					if playback.URL != "" || playback.BackupURL != "" {
+						var uid int
+						err = selectLiveIDStmt.QueryRowContext(ctx, cmd[1]).Scan(&uid)
+						if err == nil {
+							_, err = updateStmt.ExecContext(ctx,
+								playback.Duration, playback.URL, playback.BackupURL, cmd[1],
+							)
+							checkErr(err)
+						}
+					}
 					log.Printf("liveID %s 的查询结果是：\n录播链接：%s\n录播备份链接：%s",
 						cmd[1], playback.URL, playback.BackupURL,
 					)
@@ -224,9 +240,9 @@ func handleInput(ctx context.Context, db *sql.DB) {
 		} else {
 			switch cmd[0] {
 			case "listall":
-				handleQuery(ctx, selectStmt, int(uid), -1)
+				handleQuery(ctx, selectUIDStmt, int(uid), -1)
 			case "list20":
-				handleQuery(ctx, selectStmt, int(uid), 20)
+				handleQuery(ctx, selectUIDStmt, int(uid), 20)
 			default:
 				log.Println(helpMsg)
 			}
@@ -294,7 +310,7 @@ func main() {
 
 	dq, err = acfundanmu.Init(0)
 	checkErr(err)
-	go handleInput(childCtx, db)
+	go handleInput(childCtx, db, updateStmt)
 
 	oldList := make(map[string]live)
 Loop:
@@ -343,7 +359,7 @@ Loop:
 							log.Printf("获取 %s（%d） 的liveID为 %s 的playback出现错误：%+v", l.name, l.uid, l.liveID, err)
 							return
 						}
-						if playback.URL == "" {
+						if playback.URL == "" && playback.BackupURL == "" {
 							log.Printf("录播链接为空，无法获取 %s（%d） 的liveID为 %s 的主播的录播链接", l.name, l.uid, l.liveID)
 							return
 						}
