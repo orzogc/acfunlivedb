@@ -100,27 +100,34 @@ func fetchLiveList() (list map[string]live, e error) {
 		}
 	}()
 
-	const liveListURL = "https://live.acfun.cn/api/channel/list?count=%d"
+	//const liveListURL = "https://live.acfun.cn/api/channel/list?count=%d"
+	const liveListURL = "https://api-new.app.acfun.cn/rest/app/live/channel"
 
 	p := parserPool.Get()
 	defer parserPool.Put(p)
 	var v *fastjson.Value
+
 	for count := 1000; count < 1e8; count *= 10 {
 		req := fasthttp.AcquireRequest()
 		defer fasthttp.ReleaseRequest(req)
 		resp := fasthttp.AcquireResponse()
 		defer fasthttp.ReleaseResponse(resp)
-		req.SetRequestURI(fmt.Sprintf(liveListURL, count))
-		req.Header.SetMethod("GET")
+		req.SetRequestURI(liveListURL)
+		req.Header.SetMethod("POST")
+		req.Header.SetContentType("application/x-www-form-urlencoded")
+		form := fasthttp.AcquireArgs()
+		defer fasthttp.ReleaseArgs(form)
+		form.Set("count", strconv.Itoa(count))
+		form.Set("pcursor", "0")
+		req.SetBody(form.QueryString())
 		err := client.Do(req, resp)
 		checkErr(err)
 		body := resp.Body()
 
 		v, err = p.ParseBytes(body)
 		checkErr(err)
-		v = v.Get("channelListData")
 		if !v.Exists("result") || v.GetInt("result") != 0 {
-			panic(fmt.Errorf("获取正在直播的直播间列表失败"))
+			panic(fmt.Errorf("获取正在直播的直播间列表失败，响应为 %s", string(body)))
 		}
 		cursor := string(v.GetStringBytes("pcursor"))
 		if cursor == "no_more" {
