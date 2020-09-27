@@ -30,24 +30,20 @@ const createTable = `CREATE TABLE IF NOT EXISTS acfunlive (
 	title TEXT NOT NULL,
 	duration INTEGER NOT NULL,
 	playbackURL TEXT NOT NULL,
-	backupURL TEXT NOT NULL,
-	aliURL TEXT NOT NULL,
-	txURL TEXT NOT NULL
+	backupURL TEXT NOT NULL
 );
 `
 
 const insertLive = `INSERT OR IGNORE INTO acfunlive
-	(liveID, uid, name, streamName, startTime, title, duration, playbackURL, backupURL, aliURL, txURL)
+	(liveID, uid, name, streamName, startTime, title, duration, playbackURL, backupURL)
 	VALUES
-	(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	(?, ?, ?, ?, ?, ?, ?, ?, ?);
 `
 
 const updatePlayback = `UPDATE acfunlive SET
 	duration = ?,
 	playbackURL = ?,
-	backupURL = ?,
-	aliURL = ?,
-	txURL = ?
+	backupURL = ?
 	WHERE liveID = ?;
 `
 
@@ -67,8 +63,6 @@ type live struct {
 	duration    int64  // 录播时长，单位为毫秒
 	playbackURL string // 录播链接
 	backupURL   string // 录播备份链接
-	aliURL      string // 阿里云录播源链接，目前阿里云的下载速度比较快
-	txURL       string // 腾讯云录播源链接
 }
 
 var client = &fasthttp.Client{
@@ -126,6 +120,9 @@ func fetchLiveList() (list map[string]live, e error) {
 		if cursor == "no_more" {
 			break
 		}
+		if count == 1e7 {
+			panic(fmt.Errorf("获取正在直播的直播间列表失败"))
+		}
 	}
 
 	list = make(map[string]live)
@@ -178,10 +175,10 @@ func handleQuery(ctx context.Context, stmt *sql.Stmt, uid int, count int) {
 	checkErr(err)
 	defer rows.Close()
 	for rows.Next() {
-		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL, &l.aliURL, &l.txURL)
+		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL)
 		checkErr(err)
-		fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 录播链接：%s 录播备份链接：%s 录播阿里云链接：%s 录播腾讯云链接: %s\n",
-			startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.playbackURL, l.backupURL, l.aliURL, l.txURL,
+		fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 录播链接：%s 录播备份链接：%s\n",
+			startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.playbackURL, l.backupURL,
 		)
 	}
 	err = rows.Err()
@@ -217,8 +214,8 @@ func handleInput(ctx context.Context, db *sql.DB) {
 				if err != nil {
 					log.Println(err)
 				} else {
-					log.Printf("liveID %s 的查询结果是：\n录播链接：%s\n录播备份链接：%s\n录播阿里云链接：%s\n录播腾讯云链接: %s",
-						cmd[1], playback.URL, playback.BackupURL, playback.AliURL, playback.TxURL,
+					log.Printf("liveID %s 的查询结果是：\n录播链接：%s\n录播备份链接：%s",
+						cmd[1], playback.URL, playback.BackupURL,
 					)
 				}
 			} else {
@@ -253,6 +250,16 @@ func getPlayback(liveID string) (playback acfundanmu.Playback, err error) {
 			break
 		}
 		time.Sleep(10 * time.Second)
+	}
+
+	if playback.URL != "" {
+		aliURL, txURL := playback.Distinguish()
+		if aliURL != "" && txURL != "" {
+			playback.URL = aliURL
+			playback.BackupURL = txURL
+		} else {
+			log.Printf("无法获取liveID为 %s 的阿里云录播链接或腾讯云录播链接", liveID)
+		}
 	}
 
 	return playback, nil
@@ -320,7 +327,7 @@ Loop:
 				if _, ok := oldList[l.liveID]; !ok {
 					// 新的liveID
 					_, err = insertStmt.ExecContext(ctx,
-						l.liveID, l.uid, l.name, l.streamName, l.startTime, l.title, l.duration, l.playbackURL, l.backupURL, l.aliURL, l.txURL,
+						l.liveID, l.uid, l.name, l.streamName, l.startTime, l.title, l.duration, l.playbackURL, l.backupURL,
 					)
 					checkErr(err)
 				}
@@ -341,11 +348,11 @@ Loop:
 							return
 						}
 						_, err = insertStmt.ExecContext(ctx,
-							l.liveID, l.uid, l.name, l.streamName, l.startTime, l.title, l.duration, l.playbackURL, l.backupURL, l.aliURL, l.txURL,
+							l.liveID, l.uid, l.name, l.streamName, l.startTime, l.title, l.duration, l.playbackURL, l.backupURL,
 						)
 						checkErr(err)
 						_, err = updateStmt.ExecContext(ctx,
-							playback.Duration, playback.URL, playback.BackupURL, playback.AliURL, playback.TxURL, l.liveID,
+							playback.Duration, playback.URL, playback.BackupURL, l.liveID,
 						)
 						checkErr(err)
 						// 需要获取完整的录播链接
@@ -358,7 +365,7 @@ Loop:
 							}
 							if strings.Contains(playback.URL, ".0-0.0.m3u8") {
 								_, err = updateStmt.ExecContext(ctx,
-									playback.Duration, playback.URL, playback.BackupURL, playback.AliURL, playback.TxURL, l.liveID,
+									playback.Duration, playback.URL, playback.BackupURL, l.liveID,
 								)
 								checkErr(err)
 								break
