@@ -55,6 +55,10 @@ const selectUID = `SELECT * FROM acfunlive
 
 const selectLiveID = `SELECT uid FROM acfunlive WHERE liveID = ?;`
 
+const createLiveIDIndex = `CREATE INDEX IF NOT EXISTS liveIDIndex ON acfunlive (liveID);`
+
+const createUIDIndex = `CREATE INDEX IF NOT EXISTS uidIndex ON acfunlive (uid);`
+
 type live struct {
 	liveID      string // 直播ID
 	uid         int    // 主播uid
@@ -299,6 +303,10 @@ func main() {
 	err = db.Ping()
 	checkErr(err)
 	_, err = db.ExecContext(ctx, createTable)
+	checkErr(err)
+	_, err = db.ExecContext(ctx, createLiveIDIndex)
+	checkErr(err)
+	_, err = db.ExecContext(ctx, createUIDIndex)
 	checkErr(err)
 
 	insertStmt, err := db.PrepareContext(ctx, insertLive)
