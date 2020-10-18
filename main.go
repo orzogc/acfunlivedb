@@ -204,7 +204,7 @@ func handleQuery(ctx context.Context, stmt *sql.Stmt, uid int, count int) {
 
 // 处理输入
 func handleInput(ctx context.Context, db *sql.DB, updateStmt *sql.Stmt) {
-	const helpMsg = `请输入"listall 主播的uid"、"list20 主播的uid"、"getplayback liveID"或"quit"`
+	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"getplayback liveID"或"quit"`
 
 	selectUIDStmt, err := db.PrepareContext(ctx, selectUID)
 	checkErr(err)
@@ -252,8 +252,8 @@ func handleInput(ctx context.Context, db *sql.DB, updateStmt *sql.Stmt) {
 			switch cmd[0] {
 			case "listall":
 				handleQuery(ctx, selectUIDStmt, int(uid), -1)
-			case "list20":
-				handleQuery(ctx, selectUIDStmt, int(uid), 20)
+			case "list10":
+				handleQuery(ctx, selectUIDStmt, int(uid), 10)
 			default:
 				log.Println(helpMsg)
 			}
@@ -323,7 +323,7 @@ func main() {
 	checkErr(err)
 	defer updateStmt.Close()
 
-	dq, err = acfundanmu.Init(0)
+	dq, err = acfundanmu.Init(0, nil)
 	checkErr(err)
 	go handleInput(childCtx, db, updateStmt)
 
@@ -387,8 +387,8 @@ Loop:
 						)
 						checkErr(err)
 						// 需要获取完整的录播链接
-						for i := 0; i < 30; i++ {
-							time.Sleep(time.Minute)
+						for i := 0; i < 12; i++ {
+							time.Sleep(5 * time.Minute)
 							playback, err = getPlayback(l.liveID)
 							if err != nil {
 								log.Printf("获取 %s（%d） 的liveID为 %s 的playback出现错误：%+v", l.name, l.uid, l.liveID, err)
