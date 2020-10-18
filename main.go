@@ -182,7 +182,7 @@ func duration(dtime int64) string {
 }
 
 // 处理查询
-func handleQuery(ctx context.Context, stmt *sql.Stmt, uid int, count int) {
+func handleQuery(ctx context.Context, stmt *sql.Stmt, uid, count int) {
 	l := live{}
 	rows, err := stmt.QueryContext(ctx, uid, count)
 	checkErr(err)
@@ -202,9 +202,44 @@ func handleQuery(ctx context.Context, stmt *sql.Stmt, uid int, count int) {
 	}
 }
 
+// 处理更新
+func handleUpdate(ctx context.Context, selectUIDStmt, updateStmt *sql.Stmt, uid, count int) {
+	l := live{}
+	log.Printf("开始更新uid为 %d 的主播的录播链接，请等待", uid)
+	rows, err := selectUIDStmt.QueryContext(ctx, uid, count)
+	checkErr(err)
+	defer rows.Close()
+	var liveIDList []string
+	for rows.Next() {
+		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL)
+		checkErr(err)
+		liveIDList = append(liveIDList, l.liveID)
+	}
+	err = rows.Err()
+	if errors.Is(err, sql.ErrNoRows) {
+		log.Printf("没有uid为 %d 的主播的记录", uid)
+	} else {
+		checkErr(err)
+		for _, liveID := range liveIDList {
+			playback, err := getPlayback(liveID)
+			if err != nil {
+				log.Println(err)
+			} else {
+				if playback.URL != "" || playback.BackupURL != "" {
+					_, err = updateStmt.ExecContext(ctx,
+						playback.Duration, playback.URL, playback.BackupURL, liveID,
+					)
+					checkErr(err)
+				}
+			}
+		}
+	}
+	log.Printf("更新uid为 %d 的主播的录播链接成功", uid)
+}
+
 // 处理输入
 func handleInput(ctx context.Context, db *sql.DB, updateStmt *sql.Stmt) {
-	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"getplayback liveID"或"quit"`
+	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"updateall 主播的uid"、"update10 主播的uid"、"getplayback liveID"或"quit"`
 
 	selectUIDStmt, err := db.PrepareContext(ctx, selectUID)
 	checkErr(err)
@@ -254,6 +289,10 @@ func handleInput(ctx context.Context, db *sql.DB, updateStmt *sql.Stmt) {
 				handleQuery(ctx, selectUIDStmt, int(uid), -1)
 			case "list10":
 				handleQuery(ctx, selectUIDStmt, int(uid), 10)
+			case "updateall":
+				handleUpdate(ctx, selectUIDStmt, updateStmt, int(uid), -1)
+			case "update10":
+				handleUpdate(ctx, selectUIDStmt, updateStmt, int(uid), 10)
 			default:
 				log.Println(helpMsg)
 			}

@@ -15,9 +15,13 @@ go get -u github.com/orzogc/acfunlivedb
 
 运行时可以输入以下命令：
 
-`listall 主播的uid` 列出数据库里指定主播的直播数据，按照开播时间降序排列
+`listall 主播的uid` 列出数据库里指定主播的所有直播数据，按照开播时间降序排列
 
 `list10 主播的uid` 列出数据库里指定主播最近10次直播的数据，按照开播时间降序排列
+
+`updateall 主播的uid` 更新数据库里指定主播所有直播的录播链接
+
+`update10 主播的uid` 更新数据库里指定主播最近10次直播的录播链接
 
 `getplayback liveID` 根据直播的liveID查询AcFun的录播链接，注意不是所有直播都有对应的录播链接
 
