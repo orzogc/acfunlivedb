@@ -440,8 +440,8 @@ Loop:
 								checkErr(err)
 								break
 							}
-							if i == 29 {
-								log.Printf("无法获取 %s（%d） 的liveID为 %s 的完整录播链接", l.name, l.uid, l.liveID)
+							if i == 11 {
+								log.Printf("无法获取 %s（%d） 的liveID为 %s 的完整录播链接，请自行更新", l.name, l.uid, l.liveID)
 							}
 						}
 					}(l)
