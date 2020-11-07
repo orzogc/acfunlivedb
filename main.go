@@ -427,7 +427,7 @@ Loop:
 						checkErr(err)
 						// 需要获取完整的录播链接
 						for i := 0; i < 12; i++ {
-							time.Sleep(5 * time.Minute)
+							time.Sleep(30 * time.Minute)
 							playback, err = getPlayback(l.liveID)
 							if err != nil {
 								log.Printf("获取 %s（%d） 的liveID为 %s 的playback出现错误：%+v", l.name, l.uid, l.liveID, err)
