@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -45,6 +46,12 @@ var (
 	quit       = make(chan int)
 	dq         *acfundanmu.DanmuQueue
 )
+
+var livePool = &sync.Pool{
+	New: func() interface{} {
+		return new(live)
+	},
+}
 
 // 检查错误
 func checkErr(err error) {
@@ -102,14 +109,16 @@ func fetchLiveList() (list map[string]*live, e error) {
 	liveList := v.GetArray("liveList")
 	list = make(map[string]*live, len(liveList))
 	for _, liveRoom := range liveList {
-		l := &live{
-			liveID:     string(liveRoom.GetStringBytes("liveId")),
-			uid:        liveRoom.GetInt("authorId"),
-			name:       string(liveRoom.GetStringBytes("user", "name")),
-			streamName: string(liveRoom.GetStringBytes("streamName")),
-			startTime:  liveRoom.GetInt64("createTime"),
-			title:      string(liveRoom.GetStringBytes("title")),
-		}
+		l := livePool.Get().(*live)
+		l.liveID = string(liveRoom.GetStringBytes("liveId"))
+		l.uid = liveRoom.GetInt("authorId")
+		l.name = string(liveRoom.GetStringBytes("user", "name"))
+		l.streamName = string(liveRoom.GetStringBytes("streamName"))
+		l.startTime = liveRoom.GetInt64("createTime")
+		l.title = string(liveRoom.GetStringBytes("title"))
+		l.duration = 0
+		l.playbackURL = ""
+		l.backupURL = ""
 		list[l.liveID] = l
 	}
 
@@ -226,6 +235,7 @@ func handleInput(ctx context.Context) {
 		if uid, err := strconv.ParseUint(cmd[1], 10, 64); err != nil {
 			if cmd[0] == "getplayback" {
 				liveID := cmd[1]
+				log.Printf("查询liveID为 %s 的录播链接，请等待", liveID)
 				playback, err := getPlayback(liveID)
 				if err != nil {
 					log.Println(err)
@@ -235,7 +245,7 @@ func handleInput(ctx context.Context) {
 							update(ctx, liveID, playback)
 						}
 					}
-					log.Printf("liveID %s 的查询结果是：\n录播链接：%s\n录播备份链接：%s",
+					log.Printf("liveID为 %s 的录播查询结果是：\n录播链接：%s\n录播备份链接：%s",
 						liveID, playback.URL, playback.BackupURL,
 					)
 				}
@@ -363,6 +373,7 @@ Loop:
 				if _, ok := newList[l.liveID]; !ok {
 					// liveID对应的直播结束
 					go func(l *live) {
+						defer livePool.Put(l)
 						time.Sleep(10 * time.Second)
 						playback, err := getPlayback(l.liveID)
 						if err != nil {
@@ -393,6 +404,8 @@ Loop:
 							}
 						}
 					}(l)
+				} else {
+					livePool.Put(l)
 				}
 			}
 
