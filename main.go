@@ -44,7 +44,7 @@ var (
 	didCookie  *fasthttp.Cookie
 	parserPool fastjson.ParserPool
 	quit       = make(chan int)
-	dq         *acfundanmu.DanmuQueue
+	ac         *acfundanmu.AcFunLive
 )
 
 var livePool = &sync.Pool{
@@ -88,17 +88,23 @@ func fetchLiveList() (list map[string]*live, e error) {
 		form.Set("count", strconv.Itoa(count))
 		form.Set("pcursor", "0")
 		req.SetBody(form.QueryString())
+		req.Header.Set("Accept-Encoding", "gzip")
 		err := client.Do(req, resp)
 		checkErr(err)
-		body := resp.Body()
+		var body []byte
+		if string(resp.Header.Peek("content-encoding")) == "gzip" || string(resp.Header.Peek("Content-Encoding")) == "gzip" {
+			body, err = resp.BodyGunzip()
+			checkErr(err)
+		} else {
+			body = resp.Body()
+		}
 
 		v, err = p.ParseBytes(body)
 		checkErr(err)
 		if !v.Exists("result") || v.GetInt("result") != 0 {
 			panic(fmt.Errorf("获取正在直播的直播间列表失败，响应为 %s", string(body)))
 		}
-		cursor := string(v.GetStringBytes("pcursor"))
-		if cursor == "no_more" {
+		if string(v.GetStringBytes("pcursor")) == "no_more" {
 			break
 		}
 		if count == 1e7 {
@@ -274,7 +280,7 @@ func handleInput(ctx context.Context) {
 // 获取指定liveID的playback
 func getPlayback(liveID string) (playback *acfundanmu.Playback, err error) {
 	for retry := 0; retry < 3; retry++ {
-		playback, err = dq.GetPlayback(liveID)
+		playback, err = ac.GetPlayback(liveID)
 		if err != nil {
 			//log.Printf("获取liveID为 %s 的playback出现错误：%+v", liveID, err)
 			if retry == 2 {
@@ -331,7 +337,7 @@ func main() {
 	checkErr(err)
 	defer updateStmt.Close()
 
-	dq, err = acfundanmu.Init(0, nil)
+	ac, err = acfundanmu.NewAcFunLive()
 	checkErr(err)
 	go handleInput(childCtx)
 

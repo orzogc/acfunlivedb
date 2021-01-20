@@ -8,7 +8,7 @@ go get -u github.com/orzogc/acfunlivedb
 
 ### 运行依赖
 * sqlite3
-* 目前只支持Linux
+* 目前只支持Linux和Darwin
 
 ### 用法
 运行后会在本程序所在文件夹生成 `acfunlive.db` 数据库文件，本程序会自动爬取从运行时间开始的AcFun所有直播间的部分直播数据并保存到数据库里。
