@@ -78,8 +78,5 @@ func update(ctx context.Context, liveID string, playback *acfundanmu.Playback) {
 func queryExist(ctx context.Context, liveID string) bool {
 	var uid int
 	err := selectLiveIDStmt.QueryRowContext(ctx, liveID).Scan(&uid)
-	if err == nil {
-		return true
-	}
-	return false
+	return err == nil
 }

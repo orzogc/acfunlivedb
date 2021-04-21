@@ -41,7 +41,6 @@ var client = &fasthttp.Client{
 }
 
 var (
-	didCookie  *fasthttp.Cookie
 	parserPool fastjson.ParserPool
 	quit       = make(chan int)
 	ac         *acfundanmu.AcFunLive
@@ -134,12 +133,15 @@ func fetchLiveList() (list map[string]*live, e error) {
 // 处理退出信号
 func quitSignal(cancel context.CancelFunc) {
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt, os.Kill, syscall.SIGTERM)
+	signal.Notify(ch, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	select {
 	case <-ch:
 	case <-quit:
 	}
+
+	signal.Stop(ch)
+	signal.Reset(os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	log.Println("正在退出本程序，请等待")
 	cancel()
@@ -401,7 +403,7 @@ Loop:
 								log.Printf("获取 %s（%d） 的liveID为 %s 的playback出现错误：%+v", l.name, l.uid, l.liveID, err)
 								return
 							}
-							if strings.Contains(playback.URL, ".0-0.0.m3u8") {
+							if strings.Contains(playback.URL, ".0-0.0") {
 								update(ctx, l.liveID, playback)
 								return
 							}
