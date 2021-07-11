@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/mattn/go-isatty v0.0.13 // indirect
-	github.com/orzogc/acfundanmu v0.0.0-20210705165001-a3e934e21512
+	github.com/orzogc/acfundanmu v0.0.0-20210711071126-a5270ff81694
 	github.com/valyala/fasthttp v1.28.0
 	github.com/valyala/fastjson v1.6.3
 	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
