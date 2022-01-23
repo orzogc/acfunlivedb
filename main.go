@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36"
+
 type live struct {
 	liveID      string // 直播ID
 	uid         int    // 主播uid
@@ -32,6 +35,7 @@ type live struct {
 	duration    int64  // 录播时长，单位为毫秒
 	playbackURL string // 录播链接
 	backupURL   string // 录播备份链接
+	liveCutNum  int    // 直播剪辑编号
 }
 
 var client = &fasthttp.Client{
@@ -41,9 +45,10 @@ var client = &fasthttp.Client{
 }
 
 var (
-	parserPool fastjson.ParserPool
-	quit       = make(chan int)
-	ac         *acfundanmu.AcFunLive
+	liveListParserPool fastjson.ParserPool
+	liveCutParserPool  fastjson.ParserPool
+	quit               = make(chan int)
+	ac                 *acfundanmu.AcFunLive
 )
 
 var livePool = &sync.Pool{
@@ -59,19 +64,33 @@ func checkErr(err error) {
 	}
 }
 
+// 尝试运行，三次出错后结束运行
+func runThrice(t time.Duration, f func() error) error {
+	var err error
+	for retry := 0; retry < 3; retry++ {
+		if err = f(); err != nil {
+			log.Printf("%v", err)
+		} else {
+			return nil
+		}
+		time.Sleep(t)
+	}
+	return fmt.Errorf("运行三次都出现错误：%v", err)
+}
+
 // 获取正在直播的直播间列表数据
 func fetchLiveList() (list map[string]*live, e error) {
 	defer func() {
 		if err := recover(); err != nil {
-			e = fmt.Errorf("fetchLiveRoom() error: %w", err)
+			e = fmt.Errorf("fetchLiveList() error: %v", err)
 		}
 	}()
 
 	const liveListURL = "https://live.acfun.cn/api/channel/list?count=%d&pcursor=0"
 	//const liveListURL = "https://live.acfun.cn/rest/pc-direct/live/channel"
 
-	p := parserPool.Get()
-	defer parserPool.Put(p)
+	p := liveListParserPool.Get()
+	defer liveListParserPool.Put(p)
 	var v *fastjson.Value
 
 	for count := 10000; count < 1e9; count *= 10 {
@@ -81,6 +100,7 @@ func fetchLiveList() (list map[string]*live, e error) {
 		defer fasthttp.ReleaseResponse(resp)
 		req.SetRequestURI(fmt.Sprintf(liveListURL, count))
 		req.Header.SetMethod(fasthttp.MethodGet)
+		req.Header.SetUserAgent(userAgent)
 		req.Header.Set("Accept-Encoding", "gzip")
 		err := client.Do(req, resp)
 		checkErr(err)
@@ -119,10 +139,63 @@ func fetchLiveList() (list map[string]*live, e error) {
 		l.duration = 0
 		l.playbackURL = ""
 		l.backupURL = ""
+		l.liveCutNum = 0
 		list[l.liveID] = l
 	}
 
 	return list, nil
+}
+
+func fetchLiveCut(uid int, liveID string) (num int, e error) {
+	defer func() {
+		if err := recover(); err != nil {
+			num = 0
+			e = fmt.Errorf("fetchLiveCut() error: %v", err)
+		}
+	}()
+
+	const liveCutInfoURL = "https://live.acfun.cn/rest/pc-direct/live/getLiveCutInfo?authorId=%d&liveId=%s"
+
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+	req.SetRequestURI(fmt.Sprintf(liveCutInfoURL, uid, liveID))
+	req.Header.SetMethod(fasthttp.MethodGet)
+	req.Header.SetUserAgent(userAgent)
+	req.Header.Set("Accept-Encoding", "gzip")
+	err := client.Do(req, resp)
+	checkErr(err)
+	var body []byte
+	if string(resp.Header.Peek("content-encoding")) == "gzip" || string(resp.Header.Peek("Content-Encoding")) == "gzip" {
+		body, err = resp.BodyGunzip()
+		checkErr(err)
+	} else {
+		body = resp.Body()
+	}
+
+	p := liveCutParserPool.Get()
+	defer liveCutParserPool.Put(p)
+	v, err := p.ParseBytes(body)
+	checkErr(err)
+	if !v.Exists("result") || v.GetInt("result") != 0 {
+		panic(fmt.Errorf("获取直播剪辑信息失败，响应为 %s", string(body)))
+	}
+
+	status := v.GetInt("liveCutStatus")
+	if status != 1 {
+		return 0, nil
+	}
+	url := string(v.GetStringBytes("liveCutUrl"))
+	re := regexp.MustCompile(`/[0-9]+`)
+	nums := re.FindAllString(url, -1)
+	if len(nums) != 1 {
+		panic(fmt.Errorf("获取直播剪辑编号失败，响应为 %s", string(body)))
+	}
+	num, err = strconv.Atoi(nums[0][1:])
+	checkErr(err)
+
+	return num, nil
 }
 
 // 处理退出信号
@@ -161,10 +234,10 @@ func handleQuery(ctx context.Context, uid, count int) {
 	checkErr(err)
 	defer rows.Close()
 	for rows.Next() {
-		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL)
+		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL, &l.liveCutNum)
 		checkErr(err)
-		fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 录播链接：%s 录播备份链接：%s\n",
-			startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.playbackURL, l.backupURL,
+		fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 录播链接：%s 录播备份链接：%s 直播剪辑编号：%d\n",
+			startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.playbackURL, l.backupURL, l.liveCutNum,
 		)
 	}
 	err = rows.Err()
@@ -184,7 +257,7 @@ func handleUpdate(ctx context.Context, uid, count int) {
 	checkErr(err)
 	defer rows.Close()
 	for rows.Next() {
-		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL)
+		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL, &l.liveCutNum)
 		checkErr(err)
 		liveIDList = append(liveIDList, l.liveID)
 	}
@@ -347,18 +420,13 @@ Loop:
 		default:
 			var newList map[string]*live
 			for retry := 0; retry < 3; retry++ {
-				newList, err = fetchLiveList()
+				err = runThrice(10*time.Second, func() error {
+					newList, err = fetchLiveList()
+					return err
+				})
 				if err != nil {
-					log.Printf("获取直播间列表数据出现错误：%v", err)
-					if retry == 2 {
-						log.Println("获取直播间列表数据出现过多错误，退出本程序")
-						panic("获取直播间列表数据出现过多错误")
-					}
-					log.Println("尝试重新获取直播间列表数据")
-				} else {
-					break
+					panic("获取直播间列表数据出现过多错误")
 				}
-				time.Sleep(10 * time.Second)
 			}
 
 			if len(newList) == 0 {
@@ -368,6 +436,14 @@ Loop:
 			for _, l := range newList {
 				if _, ok := oldList[l.liveID]; !ok {
 					// 新的liveID
+					err = runThrice(time.Second, func() error {
+						l.liveCutNum, err = fetchLiveCut(l.uid, l.liveID)
+						return err
+					})
+					if err != nil {
+						log.Printf("获取 %s（%d） 的liveID为 %s 的直播剪辑编号失败", l.name, l.uid, l.liveID)
+						l.liveCutNum = 0
+					}
 					insert(ctx, l)
 				}
 			}

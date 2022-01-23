@@ -18,15 +18,16 @@ const createTable = `CREATE TABLE IF NOT EXISTS acfunlive (
 	title TEXT NOT NULL,
 	duration INTEGER NOT NULL,
 	playbackURL TEXT NOT NULL,
-	backupURL TEXT NOT NULL
+	backupURL TEXT NOT NULL,
+	liveCutNum INTEGER NOT NULL UNIQUE
 );
 `
 
 // 插入live
 const insertLive = `INSERT OR IGNORE INTO acfunlive
-	(liveID, uid, name, streamName, startTime, title, duration, playbackURL, backupURL)
+	(liveID, uid, name, streamName, startTime, title, duration, playbackURL, backupURL, liveCutNum)
 	VALUES
-	(?, ?, ?, ?, ?, ?, ?, ?, ?);
+	(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 `
 
 // 更新录播链接
@@ -61,7 +62,7 @@ var (
 // 插入live
 func insert(ctx context.Context, l *live) {
 	_, err := insertStmt.ExecContext(ctx,
-		l.liveID, l.uid, l.name, l.streamName, l.startTime, l.title, l.duration, l.playbackURL, l.backupURL,
+		l.liveID, l.uid, l.name, l.streamName, l.startTime, l.title, l.duration, l.playbackURL, l.backupURL, l.liveCutNum,
 	)
 	checkErr(err)
 }

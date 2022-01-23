@@ -3,13 +3,12 @@ module github.com/orzogc/acfunlivedb
 go 1.16
 
 require (
-	github.com/mattn/go-isatty v0.0.13 // indirect
-	github.com/orzogc/acfundanmu v0.0.0-20210711071126-a5270ff81694
-	github.com/valyala/fasthttp v1.28.0
+	github.com/mattn/go-isatty v0.0.14 // indirect
+	github.com/orzogc/acfundanmu v0.0.0-20220122134724-9424e37c32f8
+	github.com/valyala/fasthttp v1.32.0
 	github.com/valyala/fastjson v1.6.3
-	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
-	golang.org/x/tools v0.1.4 // indirect
-	modernc.org/ccgo/v3 v3.9.6 // indirect
-	modernc.org/memory v1.0.5 // indirect
-	modernc.org/sqlite v1.11.2
+	golang.org/x/tools v0.1.8 // indirect
+	lukechampine.com/uint128 v1.2.0 // indirect
+	modernc.org/ccgo/v3 v3.15.11 // indirect
+	modernc.org/sqlite v1.14.5
 )
