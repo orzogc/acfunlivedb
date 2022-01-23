@@ -179,7 +179,7 @@ func fetchLiveCut(uid int, liveID string) (num int, e error) {
 	v, err := p.ParseBytes(body)
 	checkErr(err)
 	if !v.Exists("result") || v.GetInt("result") != 0 {
-		panic(fmt.Errorf("获取直播剪辑信息失败，响应为 %s", string(body)))
+		panic(fmt.Errorf("获取uid为 %d 的主播的liveID为 %s 的直播剪辑信息失败，响应为 %s", uid, liveID, string(body)))
 	}
 
 	status := v.GetInt("liveCutStatus")
@@ -190,7 +190,7 @@ func fetchLiveCut(uid int, liveID string) (num int, e error) {
 	re := regexp.MustCompile(`/[0-9]+`)
 	nums := re.FindAllString(url, -1)
 	if len(nums) != 1 {
-		panic(fmt.Errorf("获取直播剪辑编号失败，响应为 %s", string(body)))
+		panic(fmt.Errorf("获取uid为 %d 的主播的liveID为 %s 的直播剪辑编号失败，响应为 %s", uid, liveID, string(body)))
 	}
 	num, err = strconv.Atoi(nums[0][1:])
 	checkErr(err)
@@ -236,8 +236,8 @@ func handleQuery(ctx context.Context, uid, count int) {
 	for rows.Next() {
 		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL, &l.liveCutNum)
 		checkErr(err)
-		fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 录播链接：%s 录播备份链接：%s 直播剪辑编号：%d\n",
-			startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.playbackURL, l.backupURL, l.liveCutNum,
+		fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 直播剪辑编号：%d\n",
+			startTime(l.startTime), l.uid, l.name, l.title, l.liveID, l.streamName, duration(l.duration), l.liveCutNum,
 		)
 	}
 	err = rows.Err()
@@ -248,38 +248,6 @@ func handleQuery(ctx context.Context, uid, count int) {
 	}
 }
 
-// 处理更新
-func handleUpdate(ctx context.Context, uid, count int) {
-	l := live{}
-	var liveIDList []string
-	log.Printf("开始更新uid为 %d 的主播的录播链接，请等待", uid)
-	rows, err := selectUIDStmt.QueryContext(ctx, uid, count)
-	checkErr(err)
-	defer rows.Close()
-	for rows.Next() {
-		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL, &l.liveCutNum)
-		checkErr(err)
-		liveIDList = append(liveIDList, l.liveID)
-	}
-	err = rows.Err()
-	if errors.Is(err, sql.ErrNoRows) {
-		log.Printf("没有uid为 %d 的主播的记录，更新失败", uid)
-		return
-	}
-	checkErr(err)
-	for _, liveID := range liveIDList {
-		playback, err := getPlayback(liveID)
-		if err != nil {
-			log.Println(err)
-		} else {
-			if playback.URL != "" || playback.BackupURL != "" {
-				update(ctx, liveID, playback)
-			}
-		}
-	}
-	log.Printf("更新uid为 %d 的主播的录播链接成功", uid)
-}
-
 // 处理输入
 func handleInput(ctx context.Context) {
 	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"updateall 主播的uid"、"update10 主播的uid"、"getplayback liveID"或"quit"`
@@ -288,10 +256,6 @@ func handleInput(ctx context.Context) {
 	selectUIDStmt, err = db.PrepareContext(ctx, selectUID)
 	checkErr(err)
 	defer selectUIDStmt.Close()
-
-	selectLiveIDStmt, err = db.PrepareContext(ctx, selectLiveID)
-	checkErr(err)
-	defer selectLiveIDStmt.Close()
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -316,11 +280,6 @@ func handleInput(ctx context.Context) {
 				if err != nil {
 					log.Println(err)
 				} else {
-					if playback.URL != "" || playback.BackupURL != "" {
-						if queryExist(ctx, liveID) {
-							update(ctx, liveID, playback)
-						}
-					}
 					log.Printf("liveID为 %s 的录播查询结果是：\n录播链接：%s\n录播备份链接：%s",
 						liveID, playback.URL, playback.BackupURL,
 					)
@@ -334,10 +293,6 @@ func handleInput(ctx context.Context) {
 				handleQuery(ctx, int(uid), -1)
 			case "list10":
 				handleQuery(ctx, int(uid), 10)
-			case "updateall":
-				handleUpdate(ctx, int(uid), -1)
-			case "update10":
-				handleUpdate(ctx, int(uid), 10)
 			default:
 				log.Println(helpMsg)
 			}
@@ -349,18 +304,12 @@ func handleInput(ctx context.Context) {
 
 // 获取指定liveID的playback
 func getPlayback(liveID string) (playback *acfundanmu.Playback, err error) {
-	for retry := 0; retry < 3; retry++ {
+	err = runThrice(10*time.Second, func() error {
 		playback, err = ac.GetPlayback(liveID)
-		if err != nil {
-			//log.Printf("获取liveID为 %s 的playback出现错误：%+v", liveID, err)
-			if retry == 2 {
-				return nil, fmt.Errorf("获取liveID为 %s 的playback失败：%w", liveID, err)
-			}
-			//log.Println("尝试重新获取playback")
-		} else {
-			break
-		}
-		time.Sleep(10 * time.Second)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("获取liveID为 %s 的playback失败：%w", liveID, err)
 	}
 
 	if playback.URL != "" {
@@ -403,7 +352,7 @@ func main() {
 	insertStmt, err = db.PrepareContext(ctx, insertLive)
 	checkErr(err)
 	defer insertStmt.Close()
-	updateStmt, err = db.PrepareContext(ctx, updatePlayback)
+	updateStmt, err = db.PrepareContext(ctx, updateDuration)
 	checkErr(err)
 	defer updateStmt.Close()
 
@@ -419,14 +368,12 @@ Loop:
 			break Loop
 		default:
 			var newList map[string]*live
-			for retry := 0; retry < 3; retry++ {
-				err = runThrice(10*time.Second, func() error {
-					newList, err = fetchLiveList()
-					return err
-				})
-				if err != nil {
-					panic("获取直播间列表数据出现过多错误")
-				}
+			err = runThrice(10*time.Second, func() error {
+				newList, err = fetchLiveList()
+				return err
+			})
+			if err != nil {
+				panic("获取直播间列表数据出现过多错误")
 			}
 
 			if len(newList) == 0 {
@@ -454,34 +401,17 @@ Loop:
 					go func(l *live) {
 						defer livePool.Put(l)
 						time.Sleep(10 * time.Second)
-						playback, err := getPlayback(l.liveID)
+						summary, err := ac.GetSummary(l.liveID)
 						if err != nil {
-							log.Printf("获取 %s（%d） 的liveID为 %s 的playback出现错误：%+v", l.name, l.uid, l.liveID, err)
+							log.Printf("获取 %s（%d） 的liveID为 %s 的直播总结出现错误：%+v", l.name, l.uid, l.liveID, err)
 							return
 						}
-						if playback.URL == "" && playback.BackupURL == "" {
-							log.Printf("录播链接为空，无法获取 %s（%d） 的liveID为 %s 的录播链接", l.name, l.uid, l.liveID)
+						if summary.Duration == 0 {
+							log.Printf("直播时长为0，无法获取 %s（%d） 的liveID为 %s 的直播时长", l.name, l.uid, l.liveID)
 							return
 						}
 						insert(ctx, l)
-						update(ctx, l.liveID, playback)
-						// 需要获取完整的录播链接
-						const loopNum = 30
-						for i := 0; i < loopNum; i++ {
-							time.Sleep(30 * time.Minute)
-							playback, err = getPlayback(l.liveID)
-							if err != nil {
-								log.Printf("获取 %s（%d） 的liveID为 %s 的playback出现错误：%+v", l.name, l.uid, l.liveID, err)
-								return
-							}
-							if strings.Contains(playback.URL, ".0-0.0") {
-								update(ctx, l.liveID, playback)
-								return
-							}
-							if i == loopNum-1 {
-								log.Printf("无法获取 %s（%d） 的liveID为 %s 的完整录播链接，请自行更新", l.name, l.uid, l.liveID)
-							}
-						}
+						update(ctx, l.liveID, summary.Duration)
 					}(l)
 				} else {
 					livePool.Put(l)

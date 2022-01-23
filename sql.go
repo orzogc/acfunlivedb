@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/orzogc/acfundanmu"
 	_ "modernc.org/sqlite"
 )
 
@@ -25,24 +24,22 @@ const createTable = `CREATE TABLE IF NOT EXISTS acfunlive (
 
 // 插入live
 const insertLive = `INSERT OR IGNORE INTO acfunlive
-	(liveID, uid, name, streamName, startTime, title, duration, playbackURL, backupURL, liveCutNum)
-	VALUES
-	(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(liveID, uid, name, streamName, startTime, title, duration, playbackURL, backupURL, liveCutNum)
+VALUES
+(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 `
 
-// 更新录播链接
-const updatePlayback = `UPDATE acfunlive SET
-	duration = ?,
-	playbackURL = ?,
-	backupURL = ?
-	WHERE liveID = ?;
+// 更新直播时长
+const updateDuration = `UPDATE acfunlive SET
+duration = ?
+WHERE liveID = ?;
 `
 
 // 根据uid查询
 const selectUID = `SELECT * FROM acfunlive
-	WHERE uid = ?
-	ORDER BY startTime DESC
-	LIMIT ?;
+WHERE uid = ?
+ORDER BY startTime DESC
+LIMIT ?;
 `
 
 const (
@@ -52,11 +49,10 @@ const (
 )
 
 var (
-	db               *sql.DB
-	insertStmt       *sql.Stmt
-	updateStmt       *sql.Stmt
-	selectUIDStmt    *sql.Stmt
-	selectLiveIDStmt *sql.Stmt
+	db            *sql.DB
+	insertStmt    *sql.Stmt
+	updateStmt    *sql.Stmt
+	selectUIDStmt *sql.Stmt
 )
 
 // 插入live
@@ -67,17 +63,8 @@ func insert(ctx context.Context, l *live) {
 	checkErr(err)
 }
 
-// 更新录播链接
-func update(ctx context.Context, liveID string, playback *acfundanmu.Playback) {
-	_, err := updateStmt.ExecContext(ctx,
-		playback.Duration, playback.URL, playback.BackupURL, liveID,
-	)
+// 更新直播时长
+func update(ctx context.Context, liveID string, duration int64) {
+	_, err := updateStmt.ExecContext(ctx, duration, liveID)
 	checkErr(err)
-}
-
-// 查询liveID的数据是否存在
-func queryExist(ctx context.Context, liveID string) bool {
-	var uid int
-	err := selectLiveIDStmt.QueryRowContext(ctx, liveID).Scan(&uid)
-	return err == nil
 }
