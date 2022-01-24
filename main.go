@@ -258,6 +258,10 @@ func handleInput(ctx context.Context) {
 	checkErr(err)
 	defer selectUIDStmt.Close()
 
+	selectLiveIDStmt, err = db.PrepareContext(ctx, selectLiveID)
+	checkErr(err)
+	defer selectLiveIDStmt.Close()
+
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		cmd := strings.Fields(scanner.Text())
@@ -299,6 +303,11 @@ func handleInput(ctx context.Context) {
 				if err != nil {
 					log.Println(err)
 				} else {
+					if playback.Duration != 0 {
+						if queryExist(ctx, liveID) {
+							updateLiveDuration(ctx, liveID, playback.Duration)
+						}
+					}
 					log.Printf("liveID为 %s 的录播查询结果是：\n录播链接：%s\n录播备份链接：%s",
 						liveID, playback.URL, playback.BackupURL,
 					)

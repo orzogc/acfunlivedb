@@ -51,6 +51,7 @@ var (
 	insertStmt         *sql.Stmt
 	updateDurationStmt *sql.Stmt
 	selectUIDStmt      *sql.Stmt
+	selectLiveIDStmt   *sql.Stmt
 )
 
 // 插入live
@@ -65,4 +66,11 @@ func insert(ctx context.Context, l *live) {
 func updateLiveDuration(ctx context.Context, liveID string, duration int64) {
 	_, err := updateDurationStmt.ExecContext(ctx, duration, liveID)
 	checkErr(err)
+}
+
+// 查询liveID的数据是否存在
+func queryExist(ctx context.Context, liveID string) bool {
+	var uid int
+	err := selectLiveIDStmt.QueryRowContext(ctx, liveID).Scan(&uid)
+	return err == nil
 }
