@@ -48,6 +48,7 @@ var (
 	liveCutParserPool  fastjson.ParserPool
 	quit               = make(chan struct{})
 	ac                 *acfundanmu.AcFunLive
+	dbMutex            = sync.RWMutex{}
 )
 
 var livePool = &sync.Pool{
@@ -64,7 +65,7 @@ func checkErr(err error) {
 }
 
 // 尝试运行，三次出错后结束运行
-func runThrice(t time.Duration, f func() error) error {
+func runThrice(f func() error) error {
 	var err error
 	for retry := 0; retry < 3; retry++ {
 		if err = f(); err != nil {
@@ -72,7 +73,7 @@ func runThrice(t time.Duration, f func() error) error {
 		} else {
 			return nil
 		}
-		time.Sleep(t)
+		time.Sleep(10 * time.Second)
 	}
 	return fmt.Errorf("运行三次都出现错误：%v", err)
 }
@@ -230,6 +231,8 @@ func duration(dtime int64) string {
 // 处理查询
 func handleQuery(ctx context.Context, uid, count int) {
 	l := live{}
+	dbMutex.RLock()
+	defer dbMutex.RUnlock()
 	rows, err := selectUIDStmt.QueryContext(ctx, uid, count)
 	checkErr(err)
 	defer rows.Close()
@@ -252,11 +255,6 @@ func handleQuery(ctx context.Context, uid, count int) {
 // 处理输入
 func handleInput(ctx context.Context) {
 	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"getplayback liveID"或"quit"`
-
-	var err error
-	selectUIDStmt, err = db.PrepareContext(ctx, selectUID)
-	checkErr(err)
-	defer selectUIDStmt.Close()
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -313,13 +311,13 @@ func handleInput(ctx context.Context) {
 			log.Println(helpMsg)
 		}
 	}
-	err = scanner.Err()
+	err := scanner.Err()
 	checkErr(err)
 }
 
 // 获取指定liveID的playback
 func getPlayback(liveID string) (playback *acfundanmu.Playback, err error) {
-	err = runThrice(10*time.Second, func() error {
+	err = runThrice(func() error {
 		playback, err = ac.GetPlayback(liveID)
 		return err
 	})
@@ -385,16 +383,20 @@ func main() {
 	defer db.Close()
 	err = db.Ping()
 	checkErr(err)
-	_, err = db.ExecContext(ctx, setTimeout)
-	checkErr(err)
 	prepare_table(ctx)
 
 	insertStmt, err = db.PrepareContext(ctx, insertLive)
 	checkErr(err)
 	defer insertStmt.Close()
+	updateLiveCutStmt, err = db.PrepareContext(ctx, updateLiveCut)
+	checkErr(err)
+	defer updateLiveCutStmt.Close()
 	updateDurationStmt, err = db.PrepareContext(ctx, updateDuration)
 	checkErr(err)
 	defer updateDurationStmt.Close()
+	selectUIDStmt, err = db.PrepareContext(ctx, selectUID)
+	checkErr(err)
+	defer selectUIDStmt.Close()
 	selectLiveIDStmt, err = db.PrepareContext(ctx, selectLiveID)
 	checkErr(err)
 	defer selectLiveIDStmt.Close()
@@ -411,7 +413,7 @@ Loop:
 			break Loop
 		default:
 			var newList map[string]*live
-			err = runThrice(10*time.Second, func() error {
+			err = runThrice(func() error {
 				newList, err = fetchLiveList()
 				return err
 			})
@@ -426,15 +428,19 @@ Loop:
 			for _, l := range newList {
 				if _, ok := oldList[l.liveID]; !ok {
 					// 新的liveID
-					err = runThrice(time.Second, func() error {
-						l.liveCutNum, err = fetchLiveCut(l.uid, l.liveID)
-						return err
-					})
-					if err != nil {
-						log.Printf("获取 %s（%d） 的liveID为 %s 的直播剪辑编号失败，放弃获取", l.name, l.uid, l.liveID)
-						l.liveCutNum = 0
-					}
 					insert(ctx, l)
+					go func(uid int, liveID string) {
+						var num int
+						var err error
+						err = runThrice(func() error {
+							num, err = fetchLiveCut(uid, liveID)
+							return err
+						})
+						if err != nil {
+							log.Printf("获取uid为 %d 的主播的liveID为 %s 的直播剪辑编号失败，放弃获取", uid, liveID)
+						}
+						updateLiveCutNum(ctx, liveID, num)
+					}(l.uid, l.liveID)
 				}
 			}
 
@@ -446,7 +452,7 @@ Loop:
 						time.Sleep(10 * time.Second)
 						var summary *acfundanmu.Summary
 						var err error
-						err = runThrice(10*time.Second, func() error {
+						err = runThrice(func() error {
 							summary, err = ac.GetSummary(l.liveID)
 							return err
 						})
@@ -458,9 +464,7 @@ Loop:
 							log.Printf("直播时长为0，无法获取 %s（%d） 的liveID为 %s 的直播时长", l.name, l.uid, l.liveID)
 							return
 						}
-						if !queryExist(ctx, l.liveID) {
-							insert(ctx, l)
-						}
+						insert(ctx, l)
 						updateLiveDuration(ctx, l.liveID, summary.Duration)
 					}(l)
 				} else {
