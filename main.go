@@ -146,6 +146,7 @@ func fetchLiveList() (list map[string]*live, e error) {
 	return list, nil
 }
 
+// 获取直播剪辑编号
 func fetchLiveCut(uid int, liveID string) (num int, e error) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -334,6 +335,34 @@ func getPlayback(liveID string) (playback *acfundanmu.Playback, err error) {
 	return playback, nil
 }
 
+// 准备table
+func prepare_table(ctx context.Context) {
+	// 检查table是否存在
+	row := db.QueryRowContext(ctx, checkTable)
+	var n int
+	err := row.Scan(&n)
+	checkErr(err)
+	if n == 0 {
+		// table不存在
+		_, err = db.ExecContext(ctx, createTable)
+		checkErr(err)
+	} else {
+		// table存在，检查liveCutNum是否存在
+		row = db.QueryRowContext(ctx, checkLiveCutNum)
+		err = row.Scan(&n)
+		checkErr(err)
+		if n == 0 {
+			// liveCutNum不存在，插入liveCutNum
+			_, err = db.ExecContext(ctx, insertLiveCutNum)
+			checkErr(err)
+		}
+	}
+	_, err = db.ExecContext(ctx, createLiveIDIndex)
+	checkErr(err)
+	_, err = db.ExecContext(ctx, createUIDIndex)
+	checkErr(err)
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -351,19 +380,14 @@ func main() {
 	defer db.Close()
 	err = db.Ping()
 	checkErr(err)
-	_, err = db.ExecContext(ctx, createTable)
-	checkErr(err)
-	_, err = db.ExecContext(ctx, createLiveIDIndex)
-	checkErr(err)
-	_, err = db.ExecContext(ctx, createUIDIndex)
-	checkErr(err)
+	prepare_table(ctx)
 
 	insertStmt, err = db.PrepareContext(ctx, insertLive)
 	checkErr(err)
 	defer insertStmt.Close()
-	updateStmt, err = db.PrepareContext(ctx, updateDuration)
+	updateDurationStmt, err = db.PrepareContext(ctx, updateDuration)
 	checkErr(err)
-	defer updateStmt.Close()
+	defer updateDurationStmt.Close()
 
 	ac, err = acfundanmu.NewAcFunLive()
 	checkErr(err)
@@ -397,7 +421,7 @@ Loop:
 						return err
 					})
 					if err != nil {
-						log.Printf("获取 %s（%d） 的liveID为 %s 的直播剪辑编号失败", l.name, l.uid, l.liveID)
+						log.Printf("获取 %s（%d） 的liveID为 %s 的直播剪辑编号失败，放弃获取", l.name, l.uid, l.liveID)
 						l.liveCutNum = 0
 					}
 					insert(ctx, l)
@@ -417,7 +441,7 @@ Loop:
 							return err
 						})
 						if err != nil {
-							log.Printf("获取 %s（%d） 的liveID为 %s 的直播总结出现错误，放弃获取：%+v", l.name, l.uid, l.liveID, err)
+							log.Printf("获取 %s（%d） 的liveID为 %s 的直播总结出现错误，放弃获取", l.name, l.uid, l.liveID)
 							return
 						}
 						if summary.Duration == 0 {
@@ -425,7 +449,7 @@ Loop:
 							return
 						}
 						insert(ctx, l)
-						update(ctx, l.liveID, summary.Duration)
+						updateLiveDuration(ctx, l.liveID, summary.Duration)
 					}(l)
 				} else {
 					livePool.Put(l)

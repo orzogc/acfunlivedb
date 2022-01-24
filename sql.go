@@ -18,7 +18,7 @@ const createTable = `CREATE TABLE IF NOT EXISTS acfunlive (
 	duration INTEGER NOT NULL,
 	playbackURL TEXT NOT NULL,
 	backupURL TEXT NOT NULL,
-	liveCutNum INTEGER NOT NULL UNIQUE
+	liveCutNum INTEGER NOT NULL DEFAULT 0
 );
 `
 
@@ -29,12 +29,6 @@ VALUES
 (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 `
 
-// 更新直播时长
-const updateDuration = `UPDATE acfunlive SET
-duration = ?
-WHERE liveID = ?;
-`
-
 // 根据uid查询
 const selectUID = `SELECT * FROM acfunlive
 WHERE uid = ?
@@ -43,16 +37,20 @@ LIMIT ?;
 `
 
 const (
-	selectLiveID      = `SELECT uid FROM acfunlive WHERE liveID = ?;`                   // 根据liveID查询
-	createLiveIDIndex = `CREATE INDEX IF NOT EXISTS liveIDIndex ON acfunlive (liveID);` // 生成liveID的index
-	createUIDIndex    = `CREATE INDEX IF NOT EXISTS uidIndex ON acfunlive (uid);`       // 生成uid的index
+	selectLiveID      = `SELECT uid FROM acfunlive WHERE liveID = ?;`                                            // 根据liveID查询
+	createLiveIDIndex = `CREATE INDEX IF NOT EXISTS liveIDIndex ON acfunlive (liveID);`                          // 生成liveID的index
+	createUIDIndex    = `CREATE INDEX IF NOT EXISTS uidIndex ON acfunlive (uid);`                                // 生成uid的index
+	checkTable        = `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='acfunlive';`            // 检查table是否存在
+	checkLiveCutNum   = `SELECT COUNT(*) AS CNTREC FROM pragma_table_info('acfunlive') WHERE name='liveCutNum';` // 检查liveCutNum是否存在
+	insertLiveCutNum  = `ALTER TABLE acfunlive ADD COLUMN liveCutNum INTEGER NOT NULL DEFAULT 0;`                // 插入直播剪辑编号
+	updateDuration    = `UPDATE acfunlive SET duration = ? WHERE liveID = ?;`                                    // 更新直播时长
 )
 
 var (
-	db            *sql.DB
-	insertStmt    *sql.Stmt
-	updateStmt    *sql.Stmt
-	selectUIDStmt *sql.Stmt
+	db                 *sql.DB
+	insertStmt         *sql.Stmt
+	updateDurationStmt *sql.Stmt
+	selectUIDStmt      *sql.Stmt
 )
 
 // 插入live
@@ -64,7 +62,7 @@ func insert(ctx context.Context, l *live) {
 }
 
 // 更新直播时长
-func update(ctx context.Context, liveID string, duration int64) {
-	_, err := updateStmt.ExecContext(ctx, duration, liveID)
+func updateLiveDuration(ctx context.Context, liveID string, duration int64) {
+	_, err := updateDurationStmt.ExecContext(ctx, duration, liveID)
 	checkErr(err)
 }
