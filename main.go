@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -234,7 +233,9 @@ func handleQuery(ctx context.Context, uid, count int) {
 	rows, err := selectUIDStmt.QueryContext(ctx, uid, count)
 	checkErr(err)
 	defer rows.Close()
+	hasUID := false
 	for rows.Next() {
+		hasUID = true
 		err = rows.Scan(&l.liveID, &l.uid, &l.name, &l.streamName, &l.startTime, &l.title, &l.duration, &l.playbackURL, &l.backupURL, &l.liveCutNum)
 		checkErr(err)
 		fmt.Printf("开播时间：%s 主播uid：%d 昵称：%s 直播标题：%s liveID: %s streamName: %s 直播时长：%s 直播剪辑编号：%d\n",
@@ -242,10 +243,9 @@ func handleQuery(ctx context.Context, uid, count int) {
 		)
 	}
 	err = rows.Err()
-	if errors.Is(err, sql.ErrNoRows) {
+	checkErr(err)
+	if !hasUID {
 		log.Printf("没有uid为 %d 的主播的记录", uid)
-	} else {
-		checkErr(err)
 	}
 }
 
@@ -257,10 +257,6 @@ func handleInput(ctx context.Context) {
 	selectUIDStmt, err = db.PrepareContext(ctx, selectUID)
 	checkErr(err)
 	defer selectUIDStmt.Close()
-
-	selectLiveIDStmt, err = db.PrepareContext(ctx, selectLiveID)
-	checkErr(err)
-	defer selectLiveIDStmt.Close()
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -389,6 +385,8 @@ func main() {
 	defer db.Close()
 	err = db.Ping()
 	checkErr(err)
+	_, err = db.ExecContext(ctx, setTimeout)
+	checkErr(err)
 	prepare_table(ctx)
 
 	insertStmt, err = db.PrepareContext(ctx, insertLive)
@@ -397,6 +395,9 @@ func main() {
 	updateDurationStmt, err = db.PrepareContext(ctx, updateDuration)
 	checkErr(err)
 	defer updateDurationStmt.Close()
+	selectLiveIDStmt, err = db.PrepareContext(ctx, selectLiveID)
+	checkErr(err)
+	defer selectLiveIDStmt.Close()
 
 	ac, err = acfundanmu.NewAcFunLive()
 	checkErr(err)
@@ -457,7 +458,9 @@ Loop:
 							log.Printf("直播时长为0，无法获取 %s（%d） 的liveID为 %s 的直播时长", l.name, l.uid, l.liveID)
 							return
 						}
-						insert(ctx, l)
+						if !queryExist(ctx, l.liveID) {
+							insert(ctx, l)
+						}
 						updateLiveDuration(ctx, l.liveID, summary.Duration)
 					}(l)
 				} else {

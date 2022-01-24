@@ -37,6 +37,7 @@ LIMIT ?;
 `
 
 const (
+	setTimeout        = `PRAGMA busy_timeout = 200;`                                                             // 设置超时
 	selectLiveID      = `SELECT uid FROM acfunlive WHERE liveID = ?;`                                            // 根据liveID查询
 	createLiveIDIndex = `CREATE INDEX IF NOT EXISTS liveIDIndex ON acfunlive (liveID);`                          // 生成liveID的index
 	createUIDIndex    = `CREATE INDEX IF NOT EXISTS uidIndex ON acfunlive (uid);`                                // 生成uid的index
