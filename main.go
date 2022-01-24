@@ -47,7 +47,7 @@ var client = &fasthttp.Client{
 var (
 	liveListParserPool fastjson.ParserPool
 	liveCutParserPool  fastjson.ParserPool
-	quit               = make(chan int)
+	quit               = make(chan struct{})
 	ac                 *acfundanmu.AcFunLive
 )
 
@@ -250,7 +250,7 @@ func handleQuery(ctx context.Context, uid, count int) {
 
 // 处理输入
 func handleInput(ctx context.Context) {
-	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"updateall 主播的uid"、"update10 主播的uid"、"getplayback liveID"或"quit"`
+	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"getplayback liveID"或"quit"`
 
 	var err error
 	selectUIDStmt, err = db.PrepareContext(ctx, selectUID)
@@ -260,22 +260,40 @@ func handleInput(ctx context.Context) {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		cmd := strings.Fields(scanner.Text())
+		if len(cmd) == 0 {
+			log.Println(helpMsg)
+			continue
+		}
 		if len(cmd) == 1 {
 			if cmd[0] == "quit" {
-				quit <- 0
+				quit <- struct{}{}
 				break
 			}
 			log.Println(helpMsg)
 			continue
 		}
-		if len(cmd) != 2 {
-			log.Println(helpMsg)
-			continue
-		}
-		if uid, err := strconv.ParseUint(cmd[1], 10, 64); err != nil {
-			if cmd[0] == "getplayback" {
-				liveID := cmd[1]
-				log.Printf("查询liveID为 %s 的录播链接，请等待", liveID)
+		switch cmd[0] {
+		case "listall":
+			for _, u := range cmd[1:] {
+				uid, err := strconv.ParseUint(u, 10, 64)
+				if err != nil {
+					log.Println(helpMsg)
+				} else {
+					handleQuery(ctx, int(uid), -1)
+				}
+			}
+		case "list10":
+			for _, u := range cmd[1:] {
+				uid, err := strconv.ParseUint(u, 10, 64)
+				if err != nil {
+					log.Println(helpMsg)
+				} else {
+					handleQuery(ctx, int(uid), 10)
+				}
+			}
+		case "getplayback":
+			log.Println("查询录播链接，请等待")
+			for _, liveID := range cmd[1:] {
 				playback, err := getPlayback(liveID)
 				if err != nil {
 					log.Println(err)
@@ -284,18 +302,9 @@ func handleInput(ctx context.Context) {
 						liveID, playback.URL, playback.BackupURL,
 					)
 				}
-			} else {
-				log.Println(helpMsg)
 			}
-		} else {
-			switch cmd[0] {
-			case "listall":
-				handleQuery(ctx, int(uid), -1)
-			case "list10":
-				handleQuery(ctx, int(uid), 10)
-			default:
-				log.Println(helpMsg)
-			}
+		default:
+			log.Println(helpMsg)
 		}
 	}
 	err = scanner.Err()
@@ -401,9 +410,14 @@ Loop:
 					go func(l *live) {
 						defer livePool.Put(l)
 						time.Sleep(10 * time.Second)
-						summary, err := ac.GetSummary(l.liveID)
+						var summary *acfundanmu.Summary
+						var err error
+						err = runThrice(10*time.Second, func() error {
+							summary, err = ac.GetSummary(l.liveID)
+							return err
+						})
 						if err != nil {
-							log.Printf("获取 %s（%d） 的liveID为 %s 的直播总结出现错误：%+v", l.name, l.uid, l.liveID, err)
+							log.Printf("获取 %s（%d） 的liveID为 %s 的直播总结出现错误，放弃获取：%+v", l.name, l.uid, l.liveID, err)
 							return
 						}
 						if summary.Duration == 0 {
