@@ -438,6 +438,7 @@ Loop:
 						})
 						if err != nil {
 							log.Printf("获取uid为 %d 的主播的liveID为 %s 的直播剪辑编号失败，放弃获取", uid, liveID)
+							return
 						}
 						updateLiveCutNum(ctx, liveID, num)
 					}(l.uid, l.liveID)
