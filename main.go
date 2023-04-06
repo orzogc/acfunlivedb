@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36"
+const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
 
 type live struct {
 	liveID      string // 直播ID
@@ -101,6 +101,7 @@ func fetchLiveList() (list map[string]*live, e error) {
 		req.SetRequestURI(fmt.Sprintf(liveListURL, count))
 		req.Header.SetMethod(fasthttp.MethodGet)
 		req.Header.SetUserAgent(userAgent)
+		req.Header.SetCookie("_did", ac.GetDeviceID())
 		req.Header.Set("Accept-Encoding", "gzip")
 		err := client.Do(req, resp)
 		checkErr(err)
@@ -164,6 +165,7 @@ func fetchLiveCut(uid int, liveID string) (num int, e error) {
 	req.SetRequestURI(fmt.Sprintf(liveCutInfoURL, uid, liveID))
 	req.Header.SetMethod(fasthttp.MethodGet)
 	req.Header.SetUserAgent(userAgent)
+	req.Header.SetCookie("_did", ac.GetDeviceID())
 	req.Header.Set("Accept-Encoding", "gzip")
 	err := client.Do(req, resp)
 	checkErr(err)
