@@ -3,7 +3,7 @@ module github.com/orzogc/acfunlivedb
 go 1.20
 
 require (
-	github.com/orzogc/acfundanmu v0.0.0-20230406213334-af8312538109
+	github.com/orzogc/acfundanmu v0.0.0-20230407115737-7b64f2d93d38
 	github.com/valyala/fasthttp v1.45.0
 	github.com/valyala/fastjson v1.6.4
 	modernc.org/sqlite v1.21.1
@@ -26,7 +26,7 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect
-	golang.org/x/tools v0.7.0 // indirect
+	golang.org/x/tools v0.8.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	lukechampine.com/uint128 v1.3.0 // indirect
 	modernc.org/cc/v3 v3.40.0 // indirect
