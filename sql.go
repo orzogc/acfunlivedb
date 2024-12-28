@@ -7,7 +7,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// 新建table
+// 新建 table
 const createTable = `CREATE TABLE IF NOT EXISTS acfunlive (
 	liveID TEXT PRIMARY KEY,
 	uid INTEGER NOT NULL,
@@ -22,14 +22,14 @@ const createTable = `CREATE TABLE IF NOT EXISTS acfunlive (
 );
 `
 
-// 插入live
+// 插入 live
 const insertLive = `INSERT OR IGNORE INTO acfunlive
 (liveID, uid, name, streamName, startTime, title, duration, playbackURL, backupURL, liveCutNum)
 VALUES
 (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 `
 
-// 根据uid查询
+// 根据 uid 查询
 const selectUID = `SELECT * FROM acfunlive
 WHERE uid = ?
 ORDER BY startTime DESC
@@ -37,11 +37,11 @@ LIMIT ?;
 `
 
 const (
-	selectLiveID      = `SELECT uid FROM acfunlive WHERE liveID = ?;`                                            // 根据liveID查询
-	createLiveIDIndex = `CREATE INDEX IF NOT EXISTS liveIDIndex ON acfunlive (liveID);`                          // 生成liveID的index
-	createUIDIndex    = `CREATE INDEX IF NOT EXISTS uidIndex ON acfunlive (uid);`                                // 生成uid的index
-	checkTable        = `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='acfunlive';`            // 检查table是否存在
-	checkLiveCutNum   = `SELECT COUNT(*) AS CNTREC FROM pragma_table_info('acfunlive') WHERE name='liveCutNum';` // 检查liveCutNum是否存在
+	selectLiveID      = `SELECT uid FROM acfunlive WHERE liveID = ?;`                                            // 根据 liveID 查询
+	createLiveIDIndex = `CREATE INDEX IF NOT EXISTS liveIDIndex ON acfunlive (liveID);`                          // 生成 liveID 的 index
+	createUIDIndex    = `CREATE INDEX IF NOT EXISTS uidIndex ON acfunlive (uid);`                                // 生成 uid 的 index
+	checkTable        = `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='acfunlive';`            // 检查 table 是否存在
+	checkLiveCutNum   = `SELECT COUNT(*) AS CNTREC FROM pragma_table_info('acfunlive') WHERE name='liveCutNum';` // 检查 liveCutNum 是否存在
 	insertLiveCutNum  = `ALTER TABLE acfunlive ADD COLUMN liveCutNum INTEGER NOT NULL DEFAULT 0;`                // 插入直播剪辑编号
 	updateLiveCut     = `UPDATE acfunlive SET liveCutNum = ? WHERE liveID = ?;`                                  // 更新直播剪辑编号
 	updateDuration    = `UPDATE acfunlive SET duration = ? WHERE liveID = ?;`                                    // 更新直播时长
@@ -56,7 +56,7 @@ var (
 	selectLiveIDStmt   *sql.Stmt
 )
 
-// 插入live
+// 插入 live
 func insert(ctx context.Context, l *live) {
 	dbMutex.Lock()
 	defer dbMutex.Unlock()
@@ -82,7 +82,7 @@ func updateLiveDuration(ctx context.Context, liveID string, duration int64) {
 	checkErr(err)
 }
 
-// 查询liveID的数据是否存在
+// 查询 liveID 的数据是否存在
 func queryExist(ctx context.Context, liveID string) bool {
 	dbMutex.RLock()
 	defer dbMutex.RUnlock()

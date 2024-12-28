@@ -25,10 +25,10 @@ import (
 const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
 
 type live struct {
-	liveID      string // 直播ID
-	uid         int    // 主播uid
+	liveID      string // 直播 ID
+	uid         int    // 主播 uid
 	name        string // 主播昵称
-	streamName  string // 直播源ID
+	streamName  string // 直播源 ID
 	startTime   int64  // 直播开始时间，单位为毫秒
 	title       string // 直播间标题
 	duration    int64  // 录播时长，单位为毫秒
@@ -218,13 +218,13 @@ func quitSignal(cancel context.CancelFunc) {
 	cancel()
 }
 
-// stime以毫秒为单位，返回具体开播时间
+// stime 以毫秒为单位，返回具体开播时间
 func startTime(stime int64) string {
 	t := time.Unix(stime/1e3, 0)
 	return fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second())
 }
 
-// dtime以毫秒为单位，返回具体直播时长
+// dtime 以毫秒为单位，返回具体直播时长
 func duration(dtime int64) string {
 	t := time.Unix(dtime/1e3, 0).UTC()
 	return fmt.Sprintf("%02d:%02d:%02d", t.Hour(), t.Minute(), t.Second())
@@ -250,13 +250,13 @@ func handleQuery(ctx context.Context, uid, count int) {
 	err = rows.Err()
 	checkErr(err)
 	if !hasUID {
-		log.Printf("没有uid为 %d 的主播的记录", uid)
+		log.Printf("没有 uid 为 %d 的主播的记录", uid)
 	}
 }
 
 // 处理输入
 func handleInput(ctx context.Context) {
-	const helpMsg = `请输入"listall 主播的uid"、"list10 主播的uid"、"getplayback liveID"或"quit"`
+	const helpMsg = `请输入"listall 主播的 uid"、"list10 主播的 uid"、"getplayback liveID"或"quit"`
 
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -317,7 +317,7 @@ func handleInput(ctx context.Context) {
 	checkErr(err)
 }
 
-// 获取指定liveID的playback
+// 获取指定 liveID 的 playback
 func getPlayback(liveID string) (playback *acfundanmu.Playback, err error) {
 	err = runThrice(func() error {
 		playback, err = ac.GetPlayback(liveID)
@@ -340,24 +340,24 @@ func getPlayback(liveID string) (playback *acfundanmu.Playback, err error) {
 	return playback, nil
 }
 
-// 准备table
+// 准备 table
 func prepare_table(ctx context.Context) {
-	// 检查table是否存在
+	// 检查 table 是否存在
 	row := db.QueryRowContext(ctx, checkTable)
 	var n int
 	err := row.Scan(&n)
 	checkErr(err)
 	if n == 0 {
-		// table不存在
+		// table 不存在
 		_, err = db.ExecContext(ctx, createTable)
 		checkErr(err)
 	} else {
-		// table存在，检查liveCutNum是否存在
+		// table 存在，检查 liveCutNum 是否存在
 		row = db.QueryRowContext(ctx, checkLiveCutNum)
 		err = row.Scan(&n)
 		checkErr(err)
 		if n == 0 {
-			// liveCutNum不存在，插入liveCutNum
+			// liveCutNum 不存在，插入 liveCutNum
 			_, err = db.ExecContext(ctx, insertLiveCutNum)
 			checkErr(err)
 		}
@@ -429,7 +429,7 @@ Loop:
 
 			for _, l := range newList {
 				if _, ok := oldList[l.liveID]; !ok {
-					// 新的liveID
+					// 新的 liveID
 					insert(ctx, l)
 					go func(uid int, liveID string) {
 						var num int
@@ -449,7 +449,7 @@ Loop:
 
 			for _, l := range oldList {
 				if _, ok := newList[l.liveID]; !ok {
-					// liveID对应的直播结束
+					// liveID 对应的直播结束
 					go func(l *live) {
 						defer livePool.Put(l)
 						time.Sleep(10 * time.Second)
@@ -476,7 +476,7 @@ Loop:
 			}
 
 			oldList = newList
-			time.Sleep(20 * time.Second)
+			time.Sleep(30 * time.Second)
 		}
 	}
 }
