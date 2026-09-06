@@ -38,7 +38,7 @@ type live struct {
 }
 
 var client = &fasthttp.Client{
-	MaxIdleConnDuration: 90 * time.Second,
+	MaxIdleConnDuration: 120 * time.Second,
 	ReadTimeout:         10 * time.Second,
 	WriteTimeout:        10 * time.Second,
 }
@@ -476,7 +476,7 @@ Loop:
 			}
 
 			oldList = newList
-			time.Sleep(30 * time.Second)
+			time.Sleep(60 * time.Second)
 		}
 	}
 }
